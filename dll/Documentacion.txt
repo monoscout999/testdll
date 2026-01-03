@@ -1,0 +1,93 @@
+# UniversalPointerCore V2.0.0 - Technical Documentation
+Professional Pointing System Core for Motion Sensors
+
+## 1. Overview
+UniversalPointerCore is a high-performance C++ library designed to transform 3D orientation data (Quaternions) into precise 2D screen coordinates (U, V). It features advanced signal processing, configurable workspace geometry, and multiple calibration modes.
+
+---
+
+## 2. API Reference (Exported C Functions)
+
+### Instance Management
+*   **`void* Pointer_Create()`**: Allocates and initializes a new internal state instance.
+*   **`void Pointer_Destroy(void* instance)`**: Frees all resources associated with the instance.
+*   **`int Pointer_GetVersion()`**: Returns `200` for version 2.0.0.
+
+### Configuration
+*   **`void Pointer_Configure(void* instance, float w, float h, float dist, float offX, float offY, float smooth)`**
+    - `w, h`: Physical width and height of the target screen (Meters).
+    - `dist`: Perpendicular distance from the user rotation center to the screen (Meters).
+    - `offX, offY`: Horizontal/Vertical offset of the user relative to the screen center (Meters).
+    - `smooth`: Exponential smoothing factor [0.0 (raw) to 0.99 (max filter)].
+*   **`void Pointer_SetQuaternionMode(void* instance, int mode)`**
+    - `0`: W-First (W, X, Y, Z) - Typical in Unity/DirectX.
+    - `1`: X-First (X, Y, Z, W) - Standard raw sensor output.
+*   **`void Pointer_SetLogCallback(void* instance, void (*callback)(const char* msg))`**
+    - Redirects internal DLL diagnostic messages to a custom function.
+
+### Calibration Modes
+*   **`void Pointer_CalibrateCenter(void* instance, float x, float y, float z, float w)`**
+    - Sets the current orientation as the screen center (0.5, 0.5).
+*   **`void Pointer_CalibrateCorners(void* instance, float tlX, float tlY, float tlZ, float tlW, float brX, float brY, float brZ, float brW)`**
+    - Registers Top-Left and Bottom-Right orientations to define a custom projection frustum.
+
+### Processing
+*   **`PointerResultV2 Pointer_Process(void* instance, float x, float y, float z, float w)`**
+    - Inputs the current rotation and returns the projected coordinates and telemetry.
+
+---
+
+## 3. Data Structures
+
+### `PointerResultV2`
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `u, v` | `float` | Projected coordinates [0.0 - 1.0]. (U: Left to Right, V: Bottom to Top) |
+| `worldX/Y/Z` | `float` | Intersection point in physical space (Meters). |
+| `dirX/Y/Z` | `float` | Unit vector representing pointing direction. |
+| `yaw, pitch` | `float` | Relative angles in degrees. |
+| `isValid` | `int` | `1` if the ray hits the screen area, `0` otherwise. |
+
+---
+
+## 4. Usage Examples
+
+### Python (using `ctypes`)
+```python
+import ctypes
+
+class PointerResultV2(ctypes.Structure):
+    _fields_ = [("u", ctypes.c_float), ("v", ctypes.c_float), 
+                ("worldX", ctypes.c_float), ("worldY", ctypes.c_float), ("worldZ", ctypes.c_float),
+                ("dirX", ctypes.c_float), ("dirY", ctypes.c_float), ("dirZ", ctypes.c_float),
+                ("yaw", ctypes.c_float), ("pitch", ctypes.c_float), ("isValid", ctypes.c_int)]
+
+lib = ctypes.CDLL("UniversalPointerCore_V2.dll")
+lib.Pointer_Process.restype = PointerResultV2
+ptr = lib.Pointer_Create()
+lib.Pointer_Configure(ptr, 1.2, 0.7, 1.5, 0.0, 0.0, 0.85)
+
+# Inside loop:
+# res = lib.Pointer_Process(ptr, x, y, z, w)
+# if res.isValid: draw_cursor(res.u, res.v)
+```
+
+### C++
+```cpp
+typedef void* (*CreateFunc)();
+typedef PointerResultV2 (*ProcessFunc)(void*, float, float, float, float);
+
+// Load library and get proc addresses...
+void* pointer = Pointer_Create();
+Pointer_Configure(pointer, 1.2f, 0.7f, 1.5f, 0.0f, 0.0f, 0.8f);
+
+// ...
+PointerResultV2 result = Pointer_Process(pointer, quat.x, quat.y, quat.z, quat.w);
+```
+
+---
+
+## 5. Integration Notes
+1.  **Coordinate Mapping**: If your drawing system uses (0,0) as Top-Left, invert the V axis: `Y_Pixels = (1.0 - v) * Height_Pixels`.
+2.  **Smoothing**: The built-in filter significantly reduces hardware noise. For most mobile sensors, a value between `0.7` and `0.9` is recommended.
+3.  **Corner Calibration**: Use this mode when the physical screen setup is asymmetric or the user is at a non-standard angle.

@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UniversalPointer V2 Pro</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            background: #121212;
+            color: white;
+            text-align: center;
+            padding: 15px;
+        }
+
+        .box {
+            background: #1e1e1e;
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            border: 1px solid #333;
+        }
+
+        button {
+            display: block;
+            width: 100%;
+            padding: 15px;
+            margin: 10px 0;
+            font-size: 16px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            background: #007bff;
+            color: white;
+            font-weight: bold;
+        }
+
+        .btn-green {
+            background: #28a745;
+        }
+
+        .btn-purple {
+            background: #6f42c1;
+        }
+
+        .btn-small {
+            padding: 8px;
+            font-size: 12px;
+            width: 48%;
+            display: inline-block;
+        }
+
+        .config-row {
+            margin: 15px 0;
+            text-align: left;
+        }
+
+        input[type=range] {
+            width: 100%;
+            margin: 10px 0;
+        }
+
+        #log {
+            font-size: 10px;
+            color: #ffaa00;
+            text-align: left;
+            height: 50px;
+            overflow-y: auto;
+            background: #000;
+            padding: 5px;
+        }
+
+        #status {
+            color: #888;
+            font-size: 12px;
+            margin-bottom: 5px;
+        }
+
+        .label-val {
+            font-weight: bold;
+            color: #00ff00;
+            float: right;
+        }
+
+        .section-title {
+            font-size: 11px;
+            color: #555;
+            text-transform: uppercase;
+            margin-top: 15px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="box">
+        <h1>Pointer Pro <small style="color:cyan">V2</small></h1>
+        <div id="status">Desconectado</div>
+        <button id="startBtn">ACTIVAR SENSORES</button>
+
+        <div id="ui" style="display:none">
+            <div class="section-title">Calibración</div>
+            <button id="calBtn" class="btn-green">Calibrar Centro</button>
+            <div style="display:flex; justify-content:space-between;">
+                <button id="tlBtn" class="btn-purple btn-small">Esquina TL</button>
+                <button id="brBtn" class="btn-purple btn-small">Esquina BR</button>
+            </div>
+
+            <div class="section-title">Configuración</div>
+            <div class="config-row">
+                <label>Suavizado: <span id="sVal" class="label-val">0.80</span></label>
+                <input type="range" id="sSli" min="0" max="0.99" step="0.01" value="0.8">
+            </div>
+            <div class="config-row">
+                <label>Distancia: <span id="dVal" class="label-val">1.5m</span></label>
+                <input type="range" id="dSli" min="0.5" max="10" step="0.1" value="1.5">
+            </div>
+
+            <label style="font-size:12px;"><input type="checkbox" id="modeCheck"> Quaternion W-First (Unity)</label>
+        </div>
+    </div>
+    <div id="log">Logs:<br></div>
+
+    <script>
+        const logDiv = document.getElementById('log');
+        const statusDiv = document.getElementById('status');
+        const startBtn = document.getElementById('startBtn');
+        const ui = document.getElementById('ui');
+
+        const log = (m) => {
+            console.log(m);
+            logDiv.innerHTML += "> " + m + "<br>";
+            logDiv.scrollTop = logDiv.scrollHeight;
+        };
+
+        let ws;
+        const messageQueue = [];
+        function connect() {
+            const protocol = location.protocol === 'https:' ? 'wss://' : 'ws://';
+            ws = new WebSocket(protocol + location.host + "/?type=phone");
+            ws.onopen = () => {
+                statusDiv.innerText = "Conexión V2 Establecida";
+                log("Link OK");
+                // Enable start button now that WS is ready
+                startBtn.disabled = false;
+                // Flush any queued messages
+                while (messageQueue.length > 0) {
+                    const msg = messageQueue.shift();
+                    ws.send(msg);
+                    log('Queued message sent');
+                }
+            };
+            ws.onerror = (e) => { log("WS Error: " + (e.message || "Unknown error")); };
+            ws.onclose = () => { statusDiv.innerText = "Reconectando..."; setTimeout(connect, 2000); };
+        }
+
+        const send = (type, data = {}) => {
+            const payload = JSON.stringify({ type, ...data });
+            if (ws && ws.readyState === 1) {
+                ws.send(payload);
+                return true;
+            }
+            // Queue the message until WS is ready
+            messageQueue.push(payload);
+            log(`WS not ready (state=${ws ? ws.readyState : 'null'}), message queued`);
+            return false;
+        };
+
+        const btnFeedback = (id) => {
+            const btn = document.getElementById(id);
+            const originalColor = btn.style.background;
+            btn.style.opacity = "0.5";
+            setTimeout(() => btn.style.opacity = "1", 100);
+        };
+
+        document.getElementById('sSli').oninput = (e) => {
+            const v = parseFloat(e.target.value);
+            document.getElementById('sVal').innerText = v.toFixed(2);
+            send("config", { smooth: v });
+        };
+        document.getElementById('dSli').oninput = (e) => {
+            const v = parseFloat(e.target.value);
+            document.getElementById('dVal').innerText = v.toFixed(1) + "m";
+            send("config", { distance: v });
+        };
+        document.getElementById('modeCheck').onchange = (e) => {
+            send("set_mode", { mode: e.target.checked ? 0 : 1 });
+            log("Modo: " + (e.target.checked ? "W-First" : "X-First"));
+        };
+
+        document.getElementById('calBtn').onclick = () => { btnFeedback('calBtn'); log("Calibrar..."); send("calibrate"); };
+        document.getElementById('tlBtn').onclick = () => { btnFeedback('tlBtn'); log("TL Capturado"); send("calibrate_tl"); };
+        document.getElementById('brBtn').onclick = () => { btnFeedback('brBtn'); log("BR Capturado"); send("calibrate_br"); };
+
+        // Disable start button until WS is ready
+        startBtn.disabled = true;
+        log("Iniciando sensores...");
+        btnFeedback('startBtn');
+
+        // Permission logic for iOS (Optional/Defensive)
+        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+            try {
+                const res = await DeviceOrientationEvent.requestPermission();
+                log("Permisos: " + res);
+                if (res !== 'granted') return;
+            } catch (e) { log("Error permisos: " + e); }
+        }
+
+        try {
+            window.addEventListener('deviceorientation', (e) => {
+                const r = Math.PI / 180;
+                const p = -(e.beta || 0) * r, y = -(e.alpha || 0) * r, g = (e.gamma || 0) * r;
+                const c1 = Math.cos(y / 2), s1 = Math.sin(y / 2), c2 = Math.cos(p / 2), s2 = Math.sin(p / 2), c3 = Math.cos(g / 2), s3 = Math.sin(g / 2);
+                const q = { w: c1 * c2 * c3 + s1 * s2 * s3, x: c1 * s2 * c3 + s1 * c2 * s3, y: s1 * c2 * c3 - c1 * s2 * s3, z: c1 * c2 * s3 - s1 * s2 * c3 };
+                send("move", { q, roll: e.gamma || 0 });
+            });
+            log("Listener añadido");
+        } catch (e) {
+            log("Error listener: " + e);
+        }
+
+        startBtn.style.display = "none";
+        ui.style.display = "block";
+        log("Sensores V2 activos");
+        };
+
+        connect();
+    </script>
+</body>
+
+</html>
