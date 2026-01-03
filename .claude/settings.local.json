@@ -2,7 +2,16 @@
   "permissions": {
     "allow": [
       "Bash(git checkout:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git remote add:*)",
+      "WebSearch",
+      "Bash(python main.py:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:gkjohnson.github.io)",
+      "Bash(npm init:*)",
+      "Bash(npm install:*)"
     ]
   }
 }

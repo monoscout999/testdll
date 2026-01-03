@@ -1,7 +1,0 @@
-# Archivo objetivo para los agentes del proyecto
-
-Este archivo indica que el documento **Vision.md** es el objetivo principal y referencia para todos los agentes del proyecto.
-
-- Ruta del archivo objetivo: `c:\Users\aguse\prueba\Vision.md`
-
-Los agentes deben consultar este archivo para obtener la visión y los requisitos del proyecto.

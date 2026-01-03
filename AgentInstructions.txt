@@ -1,5 +1,0 @@
-# Instrucción para todos los agentes del proyecto
-
-Todos los agentes deben leer el archivo de visión del proyecto antes de ejecutar cualquier acción:
-
-@Vision.md

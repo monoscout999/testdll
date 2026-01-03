@@ -189,13 +189,17 @@
 
         document.getElementById('sSli').oninput = (e) => {
             const v = parseFloat(e.target.value);
+            smoothFactor = v;  // Update mobile smooth filter
             document.getElementById('sVal').innerText = v.toFixed(2);
             send("config", { smooth: v });
+            log(`Smooth actualizado: ${v.toFixed(2)}`);
         };
         document.getElementById('dSli').oninput = (e) => {
             const v = parseFloat(e.target.value);
+            distanceMeters = v;  // Update mobile distance
             document.getElementById('dVal').innerText = v.toFixed(1) + "m";
             send("config", { distance: v });
+            log(`Distancia actualizada: ${v.toFixed(1)}m`);
         };
         document.getElementById('modeCheck').onchange = (e) => {
             send("set_mode", { mode: e.target.checked ? 0 : 1 });
@@ -208,6 +212,45 @@
 
         // Disable start button until WS is ready
         startBtn.disabled = true;
+
+        // Smooth filter and distance calculation parameters
+        let smoothFactor = 0.8;
+        let distanceMeters = 1.5;
+        let lastQuat = null;
+
+        // Quaternion smoother (exponential filter)
+        function smoothQuaternion(newQ) {
+            if (!lastQuat) {
+                lastQuat = { ...newQ };
+                return newQ;
+            }
+
+            const t = 1 - smoothFactor;
+
+            // Detect shortest path (dot product)
+            const dot = lastQuat.w * newQ.w + lastQuat.x * newQ.x + lastQuat.y * newQ.y + lastQuat.z * newQ.z;
+            const sign = dot < 0 ? -1 : 1;
+
+            // LERP interpolation
+            const smoothed = {
+                w: lastQuat.w + (newQ.w * sign - lastQuat.w) * t,
+                x: lastQuat.x + (newQ.x * sign - lastQuat.x) * t,
+                y: lastQuat.y + (newQ.y * sign - lastQuat.y) * t,
+                z: lastQuat.z + (newQ.z * sign - lastQuat.z) * t
+            };
+
+            // Normalize
+            const mag = Math.sqrt(smoothed.w * smoothed.w + smoothed.x * smoothed.x + smoothed.y * smoothed.y + smoothed.z * smoothed.z);
+            if (mag > 0) {
+                smoothed.w /= mag;
+                smoothed.x /= mag;
+                smoothed.y /= mag;
+                smoothed.z /= mag;
+            }
+
+            lastQuat = smoothed;
+            return smoothed;
+        }
 
         startBtn.onclick = async () => {
             log("Iniciando sensores...");
@@ -235,17 +278,21 @@
                     const r = Math.PI / 180;
                     const p = -(e.beta || 0) * r, y = -(e.alpha || 0) * r, g = (e.gamma || 0) * r;
                     const c1 = Math.cos(y / 2), s1 = Math.sin(y / 2), c2 = Math.cos(p / 2), s2 = Math.sin(p / 2), c3 = Math.cos(g / 2), s3 = Math.sin(g / 2);
-                    const q = { w: c1 * c2 * c3 + s1 * s2 * s3, x: c1 * s2 * c3 + s1 * c2 * s3, y: s1 * c2 * c3 - c1 * s2 * s3, z: c1 * c2 * s3 - s1 * s2 * c3 };
-                    send("move", { q, roll: e.gamma || 0 });
+                    const rawQ = { w: c1 * c2 * c3 + s1 * s2 * s3, x: c1 * s2 * c3 + s1 * c2 * s3, y: s1 * c2 * c3 - c1 * s2 * s3, z: c1 * c2 * s3 - s1 * s2 * c3 };
+
+                    // Apply smoothing filter
+                    const smoothedQ = smoothQuaternion(rawQ);
+
+                    send("move", { q: smoothedQ, roll: e.gamma || 0 });
                 });
-                log("Listener añadido (throttled 30fps)");
+                log("Listener añadido (con smooth móvil)");
             } catch (e) {
                 log("Error listener: " + e);
             }
 
             startBtn.style.display = "none";
             ui.style.display = "block";
-            log("Sensores V2 activos");
+            log("Sensores V2 activos (smooth en móvil)");
         };
 
         connect();
