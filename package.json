@@ -1,0 +1,31 @@
+{
+  "name": "prueba",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite sensor_server/public",
+    "build": "vite build sensor_server/public",
+    "preview": "vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/monoscout999/testdll.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/monoscout999/testdll/issues"
+  },
+  "homepage": "https://github.com/monoscout999/testdll#readme",
+  "dependencies": {
+    "three": "^0.160.0",
+    "three-bvh-csg": "^0.0.17",
+    "three-mesh-bvh": "^0.8.0"
+  },
+  "devDependencies": {
+    "vite": "^7.3.0"
+  }
+}

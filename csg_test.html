@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js Boolean Intersection - UI Controlled</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #info {
+            position: absolute;
+            top: 20px;
+            width: 100%;
+            text-align: center;
+            color: #0f0;
+            font-family: 'Courier New', Courier, monospace;
+            pointer-events: none;
+            text-shadow: 0 0 5px #0f0;
+            z-index: 100;
+        }
+
+        .controls-overlay {
+            position: absolute;
+            bottom: 30px;
+            left: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            z-index: 200;
+        }
+
+        .dpad {
+            display: grid;
+            grid-template-columns: repeat(3, 50px);
+            grid-template-rows: repeat(3, 50px);
+            gap: 5px;
+        }
+
+        .dpad-btn {
+            width: 50px;
+            height: 50px;
+            background: rgba(0, 255, 0, 0.2);
+            border: 2px solid #0f0;
+            color: #0f0;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            transition: background 0.2s;
+        }
+
+        .dpad-btn:hover {
+            background: rgba(0, 255, 0, 0.4);
+        }
+
+        .dpad-btn:active {
+            background: rgba(0, 255, 0, 0.6);
+        }
+
+        .up {
+            grid-column: 2;
+            grid-row: 1;
+        }
+
+        .left {
+            grid-column: 1;
+            grid-row: 2;
+        }
+
+        .right {
+            grid-column: 3;
+            grid-row: 2;
+        }
+
+        .down {
+            grid-column: 2;
+            grid-row: 3;
+        }
+
+        .slider-container {
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border: 1px solid #0f0;
+            width: 200px;
+            color: #0f0;
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        .slider-container input {
+            width: 100%;
+            cursor: pointer;
+            accent-color: #0f0;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="info">
+        <b>BOOLEAN INTERSECTION (CSG) - UI CONTROLLED</b><br>
+        Usa la CRUCETA para girar | Usa el DESLIZADOR para el diámetro
+    </div>
+
+    <div class="controls-overlay">
+        <div class="dpad">
+            <button class="dpad-btn up" id="rotUp">▲</button>
+            <button class="dpad-btn left" id="rotLeft">◀</button>
+            <button class="dpad-btn right" id="rotRight">▶</button>
+            <button class="dpad-btn down" id="rotDown">▼</button>
+        </div>
+        <div class="slider-container">
+            <label>Diámetro: <span id="radiusVal">1.0</span></label><br>
+            <input type="range" id="radiusSlider" min="0.1" max="5.0" step="0.1" value="1.0">
+        </div>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+                "three-mesh-bvh": "https://unpkg.com/three-mesh-bvh@0.7.3/build/index.module.js",
+                "three-bvh-csg": "https://unpkg.com/three-bvh-csg@0.0.17/build/index.module.js"
+            }
+        }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { Brush, Evaluator, INTERSECTION, ADDITION } from 'three-bvh-csg';
+
+        // 1. Configuración de la Escena
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x050505);
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(12, 12, 12);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+
+        // 2. Objetos CSG
+        const evaluator = new Evaluator();
+
+        // Material para el Target (Suelo + Paredes)
+        const planeMaterial = new THREE.MeshBasicMaterial({
+            color: 0xff0000,
+            wireframe: true,
+            transparent: true,
+            opacity: 0.1,
+            side: THREE.DoubleSide
+        });
+
+        // El Piso
+        const floorGeo = new THREE.BoxGeometry(10, 0.01, 10);
+        const floorBrush = new Brush(floorGeo, planeMaterial);
+
+        // Pared Superior (Z=-5)
+        const backWallGeo = new THREE.BoxGeometry(10, 10, 0.01);
+        const backWallBrush = new Brush(backWallGeo, planeMaterial);
+        backWallBrush.position.set(0, 5, -5);
+
+        // Pared Derecha (X=5)
+        const rightWallGeo = new THREE.BoxGeometry(0.01, 10, 10);
+        const rightWallBrush = new Brush(rightWallGeo, planeMaterial);
+        rightWallBrush.position.set(5, 5, 0);
+
+        // Combinamos todo en un solo target
+        floorBrush.updateMatrixWorld();
+        backWallBrush.updateMatrixWorld();
+        rightWallBrush.updateMatrixWorld();
+
+        let targetBrush = evaluator.evaluate(floorBrush, backWallBrush, ADDITION);
+        targetBrush.updateMatrixWorld(); // Importante actualizar antes de la siguiente unión
+        targetBrush = evaluator.evaluate(targetBrush, rightWallBrush, ADDITION);
+        
+        targetBrush.updateMatrixWorld();
+        scene.add(targetBrush);
+
+        // Pivot para el Cono (Anclaje en el vértice superior/tip)
+        const pivot = new THREE.Group();
+        pivot.position.set(0, 5, 0);
+        scene.add(pivot);
+
+        // El Cono (Herramienta de corte)
+        // Lo hacemos muy largo para que alcance todo el plano al rotar
+        const coneHeight = 30;
+        const coneRadius = 1;
+        const coneGeo = new THREE.ConeGeometry(coneRadius, coneHeight, 32);
+        // Desplazamos la geometría para que el tip (vértice) esté en el origen local (0,0,0)
+        // El tip de un ConeGeometry en Three.js está en y = height/2
+        coneGeo.translate(0, -coneHeight / 2, 0);
+
+        const coneMaterial = new THREE.MeshBasicMaterial({
+            color: 0x0000ff,
+            wireframe: true,
+            transparent: true,
+            opacity: 0.1
+        });
+        const coneBrush = new Brush(coneGeo, coneMaterial);
+        pivot.add(coneBrush);
+
+        // Resultado de la Intersección
+        const resultMaterial = new THREE.MeshBasicMaterial({
+            color: 0x00ff00,
+            wireframe: true,
+            side: THREE.DoubleSide
+        });
+        const resultMesh = new THREE.Mesh(new THREE.BufferGeometry(), resultMaterial);
+        scene.add(resultMesh);
+
+        // 3. Lógica de Actualización CSG
+        function updateCSG() {
+            try {
+                targetBrush.updateMatrixWorld();
+                coneBrush.updateMatrixWorld(true); // Actualizar recursivamente
+
+                const tempResult = evaluator.evaluate(targetBrush, coneBrush, INTERSECTION);
+
+                if (tempResult && tempResult.geometry) {
+                    if (resultMesh.geometry) resultMesh.geometry.dispose();
+                    resultMesh.geometry = tempResult.geometry;
+
+                    const pos = resultMesh.geometry.attributes.position;
+                    resultMesh.visible = (pos && pos.count > 0);
+                }
+            } catch (e) {
+                console.warn("Error en CSG:", e);
+                resultMesh.visible = false;
+            }
+        }
+
+        // 4. Controles UI
+        const rotStep = 0.05;
+
+        // D-PAD
+        const bindDpad = (id, axis, dir) => {
+            const btn = document.getElementById(id);
+            if (!btn) return;
+            let interval;
+            const start = () => {
+                interval = setInterval(() => {
+                    pivot.rotation[axis] += rotStep * dir;
+                    updateCSG();
+                }, 16);
+            };
+            const stop = () => clearInterval(interval);
+            btn.addEventListener('mousedown', start);
+            btn.addEventListener('mouseup', stop);
+            btn.addEventListener('mouseleave', stop);
+            // Soporte touch
+            btn.addEventListener('touchstart', (e) => { e.preventDefault(); start(); });
+            btn.addEventListener('touchend', stop);
+        };
+
+        bindDpad('rotUp', 'x', -1);
+        bindDpad('rotDown', 'x', 1);
+        bindDpad('rotLeft', 'z', -1);
+        bindDpad('rotRight', 'z', 1);
+
+        // SLIDER
+        const slider = document.getElementById('radiusSlider');
+        const radiusValLabel = document.getElementById('radiusVal');
+        slider.addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            radiusValLabel.innerText = val.toFixed(1);
+            // Escalamos uniformemente en X y Z para cambiar el radio del cono
+            coneBrush.scale.set(val, 1, val);
+            updateCSG();
+        });
+
+        // 5. Bucle de Animación
+        scene.add(new THREE.GridHelper(20, 20, 0x222222, 0x111111));
+
+        // Setup Inicial
+        pivot.rotation.x = 0; // Apunta directo al centro (y=5 -> y=0)
+        updateCSG();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Ajuste de ventana
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+
+</html>
