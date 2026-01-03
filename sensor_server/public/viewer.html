@@ -10,7 +10,7 @@
             margin: 0;
             overflow: hidden;
             background: #000;
-            font-family: sans-serif;
+            font-family: 'Consolas', monospace;
         }
 
         #info {
@@ -18,11 +18,48 @@
             top: 10px;
             left: 10px;
             color: #0f0;
-            background: rgba(0, 0, 0, 0.7);
+            background: rgba(0, 0, 0, 0.8);
             padding: 10px;
             border-radius: 5px;
             font-size: 12px;
             pointer-events: none;
+        }
+
+        #dataPanel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.85);
+            padding: 15px;
+            border-radius: 8px;
+            border: 2px solid #00ffff;
+            color: #fff;
+            font-size: 14px;
+            min-width: 250px;
+            pointer-events: none;
+        }
+
+        .dataBox {
+            background: rgba(0, 50, 50, 0.5);
+            border: 1px solid #00ffff;
+            border-radius: 4px;
+            padding: 8px;
+            margin: 8px 0;
+        }
+
+        .dataLabel {
+            color: #00ffff;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 4px;
+        }
+
+        .dataValue {
+            color: #00ff00;
+            font-size: 18px;
+            font-weight: bold;
+            font-family: 'Courier New', monospace;
         }
 
         .badge {
@@ -37,12 +74,38 @@
 
 <body>
     <div id="info">
-        <span class="badge">PRO V2</span> 3D Visualization Room<br>
-        Status: <span id="status">Disconnected</span><br>
-        Wall: <span id="wall">None</span><br>
-        <div id="debug"
-            style="margin-top:10px; font-family:monospace; color:#aaa; font-size:10px; border-top:1px solid #333; padding-top:5px;">
-            X: <span id="valX">0.00</span> | Y: <span id="valY">0.00</span> | Z: <span id="valZ">0.00</span>
+        <span class="badge">PRO V2</span> 3D Visualization<br>
+        Status: <span id="status">Disconnected</span>
+    </div>
+
+    <div id="dataPanel">
+        <div style="color: #00ffff; font-size: 16px; margin-bottom: 10px; border-bottom: 1px solid #00ffff; padding-bottom: 5px;">
+            SENSOR DATA
+        </div>
+
+        <div class="dataBox">
+            <div class="dataLabel">Wall Surface</div>
+            <div class="dataValue" id="wall">None</div>
+        </div>
+
+        <div class="dataBox">
+            <div class="dataLabel">Position X (m)</div>
+            <div class="dataValue" id="valX">0.00</div>
+        </div>
+
+        <div class="dataBox">
+            <div class="dataLabel">Position Y (m)</div>
+            <div class="dataValue" id="valY">0.00</div>
+        </div>
+
+        <div class="dataBox">
+            <div class="dataLabel">Position Z (m)</div>
+            <div class="dataValue" id="valZ">0.00</div>
+        </div>
+
+        <div class="dataBox">
+            <div class="dataLabel">Decal Radius</div>
+            <div class="dataValue" id="decalRadius">0.60 m</div>
         </div>
     </div>
     <script type="importmap">
@@ -71,19 +134,30 @@
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
 
-        // Lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        // Improved Lighting for better visibility and depth
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
         scene.add(ambientLight);
-        const pointLight = new THREE.PointLight(0x00ffff, 2, 10);
-        pointLight.position.set(0, 1, 0);
-        scene.add(pointLight);
+        const dirLight1 = new THREE.DirectionalLight(0xffffff, 0.6);
+        dirLight1.position.set(3, 5, 3);
+        scene.add(dirLight1);
+        const dirLight2 = new THREE.DirectionalLight(0xffffff, 0.3);
+        dirLight2.position.set(-3, 3, -3);
+        scene.add(dirLight2);
 
         // Room Dimensions (Meters) - Should match Python config
         const W = 4.0, H = 3.0, D = 5.0;
 
-        // Materials
-        const wallMat = new THREE.MeshStandardMaterial({ color: 0x111111, side: THREE.DoubleSide, metalness: 0.5, roughness: 0.2 });
-        const floorMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.8, roughness: 0.1 });
+        // Materials (WIREFRAME MODE)
+        const wallMat = new THREE.MeshBasicMaterial({
+            color: 0x444444,
+            wireframe: true,
+            wireframeLinewidth: 1
+        });
+        const floorMat = new THREE.MeshBasicMaterial({
+            color: 0x333333,
+            wireframe: true,
+            wireframeLinewidth: 1
+        });
         const gridHelper = new THREE.GridHelper(10, 20, 0x444444, 0x222222);
         scene.add(gridHelper);
 
@@ -115,37 +189,292 @@
         rightWall.position.y = H / 2;
         scene.add(rightWall);
 
-        // Pointer Light & Glow
-        const laserMat = new THREE.LineBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.5 });
+        // Add edge highlights to all walls (bright white for visibility)
+        const edgeMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 3 });
+
+        function addEdges(mesh) {
+            const edges = new THREE.EdgesGeometry(mesh.geometry);
+            const line = new THREE.LineSegments(edges, edgeMaterial);
+            line.position.copy(mesh.position);
+            line.rotation.copy(mesh.rotation);
+            scene.add(line);
+        }
+
+        addEdges(backWall);
+        addEdges(floor);
+        addEdges(leftWall);
+        addEdges(rightWall);
+
+        // Wall mesh references for decal projection
+        const wallMeshes = {
+            'Back': backWall,
+            'Left': leftWall,
+            'Right': rightWall,
+            'Floor': floor
+        };
+
+        // Laser Line (visible in wireframe mode)
+        const laserMat = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 });
         const laserGeom = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 1.0, 0), new THREE.Vector3(0, 1.0, -1)]);
         const laserLine = new THREE.Line(laserGeom, laserMat);
         scene.add(laserLine);
 
-        // Pointer Light
-        const pointerLight = new THREE.PointLight(0xff0000, 5, 2);
-        scene.add(pointerLight);
+        // Decal properties (independent behavior)
+        const DECAL_RADIUS = 0.6;  // Radius in meters (50% larger)
 
-        // Glow Sprite (Textureless procedural glow)
-        function createGlowTexture() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 64; canvas.height = 64;
-            const ctx = canvas.getContext('2d');
-            const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 30);
-            grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
-            grad.addColorStop(0.3, 'rgba(255, 0, 0, 0.8)');
-            grad.addColorStop(1, 'rgba(255, 0, 0, 0)');
-            ctx.fillStyle = grad;
-            ctx.fillRect(0, 0, 64, 64);
-            return new THREE.CanvasTexture(canvas);
+        // Dynamic deformable mesh that follows geometry and simulates wall collision
+        const dynamicGeometry = new THREE.BufferGeometry();
+        const dynamicMaterial = new THREE.MeshBasicMaterial({
+            color: 0x00ff00,
+            wireframe: true,
+            wireframeLinewidth: 2,
+            side: THREE.DoubleSide
+        });
+
+        const dynamicMesh = new THREE.Mesh(dynamicGeometry, dynamicMaterial);
+        scene.add(dynamicMesh);
+
+        // Smooth interpolation state for geometry transitions between walls
+        let previousVertices = null;
+        let targetVertices = null;
+        let interpolationProgress = 1.0;
+        const INTERPOLATION_SPEED = 0.08; // Slower for smoother wall transitions
+
+        // Smoothstep easing function for smoother wall transitions
+        function smoothstep(t) {
+            return t * t * (3 - 2 * t);
         }
 
-        const glowSprite = new THREE.Sprite(new THREE.SpriteMaterial({
-            map: createGlowTexture(),
-            blending: THREE.AdditiveBlending,
-            transparent: true
-        }));
-        glowSprite.scale.set(0.3, 0.3, 1);
-        scene.add(glowSprite);
+        // Generate mesh that TRULY follows wall geometry with proper bending
+        // Vertices are constrained to actual wall planes
+        function generateAdaptiveCircle(surfaces) {
+            const vertices = [];
+            const indices = [];
+            const segments = 64;
+
+            if (surfaces.length === 1) {
+                // Single surface - normal circle on that surface
+                const surface = surfaces[0];
+                const center = surface.point;
+                const normal = surface.normal;
+
+                // Build local coordinate system
+                const tangent1 = new THREE.Vector3();
+                const tangent2 = new THREE.Vector3();
+
+                if (Math.abs(normal.y) < 0.9) {
+                    tangent1.crossVectors(normal, new THREE.Vector3(0, 1, 0)).normalize();
+                } else {
+                    tangent1.crossVectors(normal, new THREE.Vector3(1, 0, 0)).normalize();
+                }
+                tangent2.crossVectors(normal, tangent1).normalize();
+
+                // Center + offset
+                const offsetCenter = center.clone().add(normal.clone().multiplyScalar(0.01));
+                vertices.push(offsetCenter.x, offsetCenter.y, offsetCenter.z);
+
+                // Circle vertices ON the surface
+                for (let i = 0; i <= segments; i++) {
+                    const angle = (i / segments) * Math.PI * 2;
+                    const x = Math.cos(angle) * DECAL_RADIUS;
+                    const y = Math.sin(angle) * DECAL_RADIUS;
+
+                    const pos = center.clone()
+                        .add(tangent1.clone().multiplyScalar(x))
+                        .add(tangent2.clone().multiplyScalar(y))
+                        .add(normal.clone().multiplyScalar(0.01));
+
+                    vertices.push(pos.x, pos.y, pos.z);
+
+                    if (i < segments) {
+                        indices.push(0, i + 1, i + 2);
+                    }
+                }
+
+            } else {
+                // Multiple surfaces - mesh bends along corner edges
+                // Each vertex is CLAMPED to its corresponding wall plane
+
+                // We'll create a circle in 3D space, then clamp each vertex to the nearest surface
+                // This creates a natural "bending" effect along corner edges
+
+                const avgCenter = new THREE.Vector3();
+                surfaces.forEach(s => avgCenter.add(s.point));
+                avgCenter.divideScalar(surfaces.length);
+
+                // Average normal for reference orientation
+                const avgNormal = new THREE.Vector3();
+                surfaces.forEach(s => avgNormal.add(s.normal));
+                avgNormal.normalize();
+
+                // Build reference coordinate system
+                const refTangent1 = new THREE.Vector3();
+                const refTangent2 = new THREE.Vector3();
+
+                if (Math.abs(avgNormal.y) < 0.9) {
+                    refTangent1.crossVectors(avgNormal, new THREE.Vector3(0, 1, 0)).normalize();
+                } else {
+                    refTangent1.crossVectors(avgNormal, new THREE.Vector3(1, 0, 0)).normalize();
+                }
+                refTangent2.crossVectors(avgNormal, refTangent1).normalize();
+
+                // Add center vertex
+                vertices.push(avgCenter.x, avgCenter.y, avgCenter.z);
+
+                // Generate circle vertices, clamping each to its nearest wall plane
+                for (let i = 0; i <= segments; i++) {
+                    const angle = (i / segments) * Math.PI * 2;
+                    const x = Math.cos(angle) * DECAL_RADIUS;
+                    const y = Math.sin(angle) * DECAL_RADIUS;
+
+                    // Ideal position in 3D space (unclamped)
+                    const idealPos = avgCenter.clone()
+                        .add(refTangent1.clone().multiplyScalar(x))
+                        .add(refTangent2.clone().multiplyScalar(y));
+
+                    // Find which surface this vertex should belong to
+                    // by checking which surface it's closest to or which one it "faces"
+                    let bestSurface = surfaces[0];
+                    let minDist = Infinity;
+
+                    surfaces.forEach(surf => {
+                        // Project ideal position onto this surface's plane
+                        const toIdeal = idealPos.clone().sub(surf.point);
+                        const distToPlane = Math.abs(toIdeal.dot(surf.normal));
+
+                        if (distToPlane < minDist) {
+                            minDist = distToPlane;
+                            bestSurface = surf;
+                        }
+                    });
+
+                    // Clamp vertex to the selected surface's plane
+                    const toIdeal = idealPos.clone().sub(bestSurface.point);
+                    const distAlongNormal = toIdeal.dot(bestSurface.normal);
+                    const clampedPos = idealPos.clone().sub(
+                        bestSurface.normal.clone().multiplyScalar(distAlongNormal - 0.01)
+                    );
+
+                    vertices.push(clampedPos.x, clampedPos.y, clampedPos.z);
+
+                    // Create triangle fan from center
+                    if (i < segments) {
+                        indices.push(0, i + 1, i + 2);
+                    }
+                }
+            }
+
+            return { vertices, indices, borderVertices: [] };
+        }
+
+        // Raycaster for surface detection
+        const surfaceRaycaster = new THREE.Raycaster();
+        const raycastableWalls = [backWall, leftWall, rightWall, floor];
+
+
+        // Update dynamic mesh - deforms to follow geometry and simulate collision
+        function updateCrawlingCircle(x, y, z) {
+            const origin = new THREE.Vector3(0, 1.0, 0); // User position
+            const targetPoint = new THREE.Vector3(x, y, z);
+
+            // Cast ray from user to target point
+            const direction = targetPoint.clone().sub(origin).normalize();
+            surfaceRaycaster.set(origin, direction);
+
+            // Find primary intersection
+            const intersections = surfaceRaycaster.intersectObjects(raycastableWalls, false);
+
+            if (intersections.length > 0) {
+                const primaryIntersection = intersections[0];
+                const primaryPoint = primaryIntersection.point;
+
+                // Detect all nearby surfaces within circle radius
+                const nearbySurfaces = [];
+                const EDGE_THRESHOLD = DECAL_RADIUS * 0.8; // Activate when within 80% of radius
+
+                // Primary surface always included
+                const primaryNormal = primaryIntersection.face.normal.clone();
+                primaryNormal.transformDirection(primaryIntersection.object.matrixWorld);
+
+                nearbySurfaces.push({
+                    mesh: primaryIntersection.object,
+                    point: primaryPoint.clone(),
+                    normal: primaryNormal
+                });
+
+                // Check proximity to edges/corners
+                const px = primaryPoint.x;
+                const py = primaryPoint.y;
+                const pz = primaryPoint.z;
+
+                // Check if near Back wall (z = -D/2)
+                if (Math.abs(pz - (-D/2)) < EDGE_THRESHOLD && primaryIntersection.object !== backWall) {
+                    const projPoint = new THREE.Vector3(px, py, -D/2);
+                    const normal = new THREE.Vector3(0, 0, 1);
+                    nearbySurfaces.push({ mesh: backWall, point: projPoint, normal });
+                }
+
+                // Check if near Left wall (x = -W/2)
+                if (Math.abs(px - (-W/2)) < EDGE_THRESHOLD && primaryIntersection.object !== leftWall) {
+                    const projPoint = new THREE.Vector3(-W/2, py, pz);
+                    const normal = new THREE.Vector3(1, 0, 0);
+                    nearbySurfaces.push({ mesh: leftWall, point: projPoint, normal });
+                }
+
+                // Check if near Right wall (x = W/2)
+                if (Math.abs(px - (W/2)) < EDGE_THRESHOLD && primaryIntersection.object !== rightWall) {
+                    const projPoint = new THREE.Vector3(W/2, py, pz);
+                    const normal = new THREE.Vector3(-1, 0, 0);
+                    nearbySurfaces.push({ mesh: rightWall, point: projPoint, normal });
+                }
+
+                // Check if near Floor (y = 0)
+                if (Math.abs(py - 0) < EDGE_THRESHOLD && primaryIntersection.object !== floor) {
+                    const projPoint = new THREE.Vector3(px, 0, pz);
+                    const normal = new THREE.Vector3(0, 1, 0);
+                    nearbySurfaces.push({ mesh: floor, point: projPoint, normal });
+                }
+
+                // Generate adaptive geometry that deforms around corners
+                const { vertices, indices, borderVertices } = generateAdaptiveCircle(nearbySurfaces);
+
+                const surfaceNames = nearbySurfaces.map(s => {
+                    if (s.mesh === backWall) return 'Back';
+                    if (s.mesh === leftWall) return 'Left';
+                    if (s.mesh === rightWall) return 'Right';
+                    if (s.mesh === floor) return 'Floor';
+                    return 'Unknown';
+                });
+                console.log(`[MESH] Surfaces: [${surfaceNames.join(', ')}] | Vertices: ${vertices.length/3} | Triangles: ${indices.length/3}`);
+
+                // Smooth interpolation to avoid jumps
+                if (targetVertices === null || targetVertices.length !== vertices.length) {
+                    // First time or topology changed - snap immediately
+                    targetVertices = vertices.slice();
+                    previousVertices = vertices.slice();
+                    interpolationProgress = 1.0;
+                } else {
+                    // Smooth transition
+                    previousVertices = dynamicGeometry.attributes.position ?
+                        Array.from(dynamicGeometry.attributes.position.array) :
+                        targetVertices.slice();
+                    targetVertices = vertices.slice();
+                    interpolationProgress = 0.0; // Start interpolation
+                }
+
+                // Update geometry (will be interpolated in animate loop)
+                if (!dynamicGeometry.attributes.position) {
+                    dynamicGeometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+                }
+                dynamicGeometry.setIndex(indices);
+                dynamicGeometry.computeVertexNormals();
+                dynamicMesh.visible = true;
+
+            } else {
+                // No intersection - hide mesh
+                dynamicMesh.visible = false;
+            }
+        }
 
         // Origin Marker (User)
         const userGeom = new THREE.CylinderGeometry(0.02, 0.05, 0.2);
@@ -174,13 +503,8 @@
                     const targetPos = new THREE.Vector3(data.x, data.y + 1.0, data.z);
                     const startPos = new THREE.Vector3(0, 1.0, 0);
 
-                    // Update pointer visuals
-                    pointerLight.position.copy(targetPos);
-                    glowSprite.position.copy(targetPos);
-
-                    // Offset glow slightly away from wall to avoid z-fighting
-                    const dir = targetPos.clone().sub(startPos).normalize();
-                    glowSprite.position.sub(dir.multiplyScalar(0.02));
+                    // Update crawling circle that adapts to geometry
+                    updateCrawlingCircle(data.x, data.y + 1.0, data.z);
 
                     // Update laser line
                     laserLine.geometry.setFromPoints([startPos, targetPos]);
@@ -194,9 +518,12 @@
                     // Dynamic color based on wall
                     const colors = { 'Front': 0x00ffff, 'Left': 0xff00ff, 'Right': 0xffff00, 'Floor': 0x00ff00, 'Back': 0xff0000 };
                     const hex = colors[data.wall] || 0xff0000;
-                    pointerLight.color.setHex(hex);
                     laserLine.material.color.setHex(hex);
-                    glowSprite.material.color.setHex(hex);
+
+                    // Update color for dynamic mesh
+                    if (dynamicMesh.visible) {
+                        dynamicMaterial.color.setHex(hex);
+                    }
                 }
             };
         }
@@ -207,6 +534,24 @@
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
+
+            // Smooth vertex interpolation to avoid jumps during surface transitions
+            if (interpolationProgress < 1.0 && previousVertices && targetVertices && dynamicMesh.visible) {
+                interpolationProgress = Math.min(1.0, interpolationProgress + INTERPOLATION_SPEED);
+
+                // Apply smoothstep easing for smoother transitions
+                const easedProgress = smoothstep(interpolationProgress);
+
+                const posAttr = dynamicGeometry.attributes.position;
+                for (let i = 0; i < posAttr.count * 3; i++) {
+                    const prev = previousVertices[i];
+                    const target = targetVertices[i];
+                    posAttr.array[i] = prev + (target - prev) * easedProgress;
+                }
+                posAttr.needsUpdate = true;
+                dynamicGeometry.computeVertexNormals();
+            }
+
             renderer.render(scene, camera);
         }
         animate();

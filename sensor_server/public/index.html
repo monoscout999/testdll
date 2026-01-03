@@ -133,6 +133,13 @@
             console.log(m);
             logDiv.innerHTML += "> " + m + "<br>";
             logDiv.scrollTop = logDiv.scrollHeight;
+
+            // Limit log entries to last 50 to prevent memory issues
+            const lines = logDiv.querySelectorAll('br');
+            if (lines.length > 50) {
+                const text = logDiv.innerHTML.split('<br>');
+                logDiv.innerHTML = text.slice(-50).join('<br>');
+            }
         };
 
         let ws;
@@ -153,7 +160,12 @@
                 }
             };
             ws.onerror = (e) => { log("WS Error: " + (e.message || "Unknown error")); };
-            ws.onclose = () => { statusDiv.innerText = "Reconectando..."; setTimeout(connect, 2000); };
+            ws.onclose = () => {
+                statusDiv.innerText = "Reconectando...";
+                startBtn.disabled = true; // Disable button while reconnecting
+                log("Connection closed, reconnecting...");
+                setTimeout(connect, 2000);
+            };
         }
 
         const send = (type, data = {}) => {
@@ -196,34 +208,44 @@
 
         // Disable start button until WS is ready
         startBtn.disabled = true;
-        log("Iniciando sensores...");
-        btnFeedback('startBtn');
 
-        // Permission logic for iOS (Optional/Defensive)
-        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        startBtn.onclick = async () => {
+            log("Iniciando sensores...");
+            btnFeedback('startBtn');
+
+            // Permission logic for iOS (Optional/Defensive)
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                try {
+                    const res = await DeviceOrientationEvent.requestPermission();
+                    log("Permisos: " + res);
+                    if (res !== 'granted') return;
+                } catch (e) { log("Error permisos: " + e); }
+            }
+
             try {
-                const res = await DeviceOrientationEvent.requestPermission();
-                log("Permisos: " + res);
-                if (res !== 'granted') return;
-            } catch (e) { log("Error permisos: " + e); }
-        }
+                // Throttle to ~30 updates/second instead of 60+ to save resources
+                let lastSendTime = 0;
+                const throttleMs = 33; // ~30fps
 
-        try {
-            window.addEventListener('deviceorientation', (e) => {
-                const r = Math.PI / 180;
-                const p = -(e.beta || 0) * r, y = -(e.alpha || 0) * r, g = (e.gamma || 0) * r;
-                const c1 = Math.cos(y / 2), s1 = Math.sin(y / 2), c2 = Math.cos(p / 2), s2 = Math.sin(p / 2), c3 = Math.cos(g / 2), s3 = Math.sin(g / 2);
-                const q = { w: c1 * c2 * c3 + s1 * s2 * s3, x: c1 * s2 * c3 + s1 * c2 * s3, y: s1 * c2 * c3 - c1 * s2 * s3, z: c1 * c2 * s3 - s1 * s2 * c3 };
-                send("move", { q, roll: e.gamma || 0 });
-            });
-            log("Listener añadido");
-        } catch (e) {
-            log("Error listener: " + e);
-        }
+                window.addEventListener('deviceorientation', (e) => {
+                    const now = Date.now();
+                    if (now - lastSendTime < throttleMs) return; // Skip if too soon
+                    lastSendTime = now;
 
-        startBtn.style.display = "none";
-        ui.style.display = "block";
-        log("Sensores V2 activos");
+                    const r = Math.PI / 180;
+                    const p = -(e.beta || 0) * r, y = -(e.alpha || 0) * r, g = (e.gamma || 0) * r;
+                    const c1 = Math.cos(y / 2), s1 = Math.sin(y / 2), c2 = Math.cos(p / 2), s2 = Math.sin(p / 2), c3 = Math.cos(g / 2), s3 = Math.sin(g / 2);
+                    const q = { w: c1 * c2 * c3 + s1 * s2 * s3, x: c1 * s2 * c3 + s1 * c2 * s3, y: s1 * c2 * c3 - c1 * s2 * s3, z: c1 * c2 * s3 - s1 * s2 * c3 };
+                    send("move", { q, roll: e.gamma || 0 });
+                });
+                log("Listener añadido (throttled 30fps)");
+            } catch (e) {
+                log("Error listener: " + e);
+            }
+
+            startBtn.style.display = "none";
+            ui.style.display = "block";
+            log("Sensores V2 activos");
         };
 
         connect();

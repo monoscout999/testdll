@@ -207,9 +207,9 @@ class PointerApp:
             hit_x = dx * t
             hit_y = dy * t
             hit_z = self.distance
-            
-            # Check if it hits the front rectangle (otherwise it spilled to sides/floor)
-            if abs(hit_x) <= self.screen_width/2 and abs(hit_y) <= self.screen_height/2:
+
+            # Check if it hits the front wall using ROOM dimensions (not screen dimensions)
+            if abs(hit_x) <= box_w/2 and abs(hit_y) <= box_h/2:
                 hit_wall = "Front"
             else:
                 # 2. Check Side Walls (X = +/- box_w/2)
@@ -220,9 +220,9 @@ class PointerApp:
                     hit_y = dy * t_side
                     hit_z = dz * t_side
                     hit_wall = "Right" if dx > 0 else "Left"
-                    
+
                 # 3. Check Floor (Y = -box_h/2)
-                floor_y = -self.screen_height/2 # Simple: floor is at screen bottom
+                floor_y = -box_h/2  # Floor is at bottom of room
                 if dy < -0.01:
                     t_floor = floor_y / dy
                     if hit_wall == "None" or t_floor < t: # Floor hit is closer

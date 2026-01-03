@@ -80,9 +80,13 @@ class AppController:
                                       bg='#27ae60', fg='white', font=("Arial", 10, "bold"), width=20, height=2)
         self.start_button.pack(pady=5)
 
-        self.stop_button = tk.Button(root, text="Detener Prueba", command=self.stop_app, 
+        self.stop_button = tk.Button(root, text="Detener Prueba", command=self.stop_app,
                                      bg='#c0392b', fg='white', font=("Arial", 10, "bold"), width=20, height=2)
         self.stop_button.pack(pady=5)
+
+        self.restart_button = tk.Button(root, text="Reiniciar Prueba", command=self.restart_app,
+                                        bg='#f39c12', fg='white', font=("Arial", 10, "bold"), width=20, height=2)
+        self.restart_button.pack(pady=5)
 
     def start_app(self):
         try:
@@ -115,13 +119,34 @@ class AppController:
 
     def stop_app(self):
         try:
-            # Kill Node and Python processes
-            subprocess.run('taskkill /F /IM node.exe /T', shell=True, capture_output=True)
-            subprocess.run('taskkill /F /IM python.exe /T', shell=True, capture_output=True)
-            
+            # Kill only Node.js on port 3000 (sensor_server)
+            result = subprocess.run('netstat -aon | find ":3000" | find "LISTENING"',
+                                  shell=True, capture_output=True, text=True)
+            if result.stdout:
+                for line in result.stdout.strip().split('\n'):
+                    parts = line.split()
+                    if len(parts) >= 5:
+                        pid = parts[-1]
+                        subprocess.run(f'taskkill /F /PID {pid}', shell=True, capture_output=True)
+
+            # Kill only Python running main.py (by command line)
+            result = subprocess.run('wmic process where "name=\'python.exe\' and CommandLine like \'%%main.py%%\'" get ProcessId',
+                                  shell=True, capture_output=True, text=True)
+            if result.stdout:
+                for line in result.stdout.strip().split('\n'):
+                    line = line.strip()
+                    if line and line.isdigit():
+                        subprocess.run(f'taskkill /F /PID {line}', shell=True, capture_output=True)
+
             self.label.config(text="Estado: Detenido", fg="#e74c3c")
         except Exception as e:
             messagebox.showerror("Error", f"Error al detener procesos: {e}")
+
+    def restart_app(self):
+        self.stop_app()
+        import time
+        time.sleep(2)
+        self.start_app()
 
 if __name__ == "__main__":
     root = tk.Tk()
