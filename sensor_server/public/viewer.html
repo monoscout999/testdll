@@ -13,6 +13,11 @@
             font-family: 'Consolas', monospace;
         }
 
+        /* Video element for texture (hidden) */
+        #video {
+            display: none;
+        }
+
         /* Post-Processing Overlay (Grain + Vignette) */
         .overlay {
             position: absolute;
@@ -80,15 +85,38 @@
             font-weight: 500;
             font-family: 'Courier New', monospace;
         }
+
+        #playButton {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 20px 40px;
+            font-size: 24px;
+            background: rgba(0, 255, 0, 0.2);
+            border: 2px solid #0f0;
+            color: #0f0;
+            cursor: pointer;
+            z-index: 100;
+            display: block;
+        }
     </style>
 </head>
 
 <body>
+    <!-- Video Source -->
+    <video id="video" loop muted playsinline crossorigin="anonymous">
+        <source src="videowall.mp4" type="video/mp4">
+    </video>
+
     <!-- Overlay for atmosphere -->
     <div class="overlay"></div>
 
+    <!-- User interaction required for audio/video sometimes -->
+    <button id="playButton">CLICK TO START</button>
+
     <div id="info">
-        <b>UniversalPointer V2</b> | Realistic Render<br>
+        <b>UniversalPointer V2</b> | Video Reveal<br>
         Status: <span id="status" style="color:#888">Connecting...</span>
     </div>
 
@@ -120,7 +148,7 @@
 
         <div class="dataBox" style="pointer-events: auto; margin-top: 15px;">
             <div class="dataLabel" style="display: flex; justify-content: space-between;">
-                <span>Light Radius</span>
+                <span>Reveal Radius</span>
                 <span id="coneRadius" style="color:#fff">3.6 m</span>
             </div>
             <input type="range" id="radiusSlider" min="0.3" max="10.0" step="0.1" value="3.6"
@@ -143,20 +171,38 @@
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
         import { Brush, Evaluator, INTERSECTION, ADDITION } from 'three-bvh-csg';
 
-        // --- Advanced Texture Generation ---
+        // --- Video Setup ---
+        const video = document.getElementById('video');
+        const playBtn = document.getElementById('playButton');
+
+        playBtn.addEventListener('click', () => {
+            video.play();
+            playBtn.style.display = 'none';
+        });
+
+        const videoTexture = new THREE.VideoTexture(video);
+        videoTexture.colorSpace = THREE.SRGBColorSpace;
+        // Adjust texture mapping to cover the whole walls nicely
+        // Assuming walls are approx same size or we want repeat
+        // But video usually shouldn't repeat if it's a "screen". 
+        // Let's set it to cover 1 unit roughly, or match wall UVs.
+        // Wall UVs usually 0-1.
+        // Let's enable wrapping just in case.
+        videoTexture.wrapS = THREE.RepeatWrapping;
+        videoTexture.wrapT = THREE.RepeatWrapping;
+        videoTexture.repeat.set(1, 1); // 1:1 mapping to wall UVs
+
+        // --- Advanced Texture Generation (For Dark Walls) ---
         function createRealisticCement() {
-            const size = 1024; // Higher res
+            const size = 1024;
             const canvas = document.createElement('canvas');
             canvas.width = size;
             canvas.height = size;
             const ctx = canvas.getContext('2d');
 
             // 1. Fractal Noise for Diffuse
-            // Fill Background
             ctx.fillStyle = '#555555';
             ctx.fillRect(0, 0, size, size);
-
-            // Layer 1: Large soft noise (Base variation)
             for (let i = 0; i < 400; i++) {
                 const x = Math.random() * size;
                 const y = Math.random() * size;
@@ -167,30 +213,12 @@
                 ctx.fillStyle = grd;
                 ctx.fillRect(x - r, y - r, r * 2, r * 2);
             }
-
-            // Layer 2: Medium grit
             for (let i = 0; i < 50000; i++) {
                 const x = Math.random() * size;
                 const y = Math.random() * size;
-                const grey = Math.floor(Math.random() * 50 + 80); // 80-130
+                const grey = Math.floor(Math.random() * 50 + 80);
                 ctx.fillStyle = `rgba(${grey},${grey},${grey}, 0.08)`;
                 ctx.fillRect(x, y, 2, 2);
-            }
-
-            // Layer 3: Cracks/Scratches
-            ctx.strokeStyle = 'rgba(0,0,0,0.15)';
-            for (let i = 0; i < 15; i++) {
-                ctx.lineWidth = Math.random() * 2 + 0.5;
-                ctx.beginPath();
-                let x = Math.random() * size;
-                let y = Math.random() * size;
-                ctx.moveTo(x, y);
-                for (let j = 0; j < 5; j++) {
-                    x += (Math.random() - 0.5) * 100;
-                    y += (Math.random() - 0.5) * 100;
-                    ctx.lineTo(x, y);
-                }
-                ctx.stroke();
             }
 
             const diffuseMap = new THREE.CanvasTexture(canvas);
@@ -198,23 +226,19 @@
             diffuseMap.wrapT = THREE.RepeatWrapping;
             diffuseMap.repeat.set(2, 2);
 
-            // 2. Roughness Map (Inverted intensity of diffuse + heavy noise)
+            // 2. Roughness
             const rCanvas = document.createElement('canvas');
             rCanvas.width = size;
             rCanvas.height = size;
             const rCtx = rCanvas.getContext('2d');
-
-            // Draw diffuse inverted
             rCtx.filter = 'contrast(150%) brightness(120%)';
             rCtx.drawImage(canvas, 0, 0);
-
             const roughnessMap = new THREE.CanvasTexture(rCanvas);
             roughnessMap.wrapS = THREE.RepeatWrapping;
             roughnessMap.wrapT = THREE.RepeatWrapping;
             roughnessMap.repeat.set(2, 2);
 
-            // 3. Normal Map
-            // Simple Sobel Generation
+            // 3. Normal
             const normalCanvas = document.createElement('canvas');
             normalCanvas.width = size;
             normalCanvas.height = size;
@@ -257,7 +281,6 @@
         // --- Scene Setup ---
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x0a0a0a);
-        // Atmospheric Fog
         scene.fog = new THREE.FogExp2(0x080808, 0.15);
 
         const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -271,19 +294,16 @@
 
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
-        controls.maxPolarAngle = Math.PI / 1.5; // Prevent going under floor
+        controls.maxPolarAngle = Math.PI / 1.5;
 
-        // --- Lighting (Realistic) ---
-        // 1. Hemisphere (Sky/Ground ambience)
+        // --- Lighting ---
         const hemiLight = new THREE.HemisphereLight(0x223344, 0x111111, 0.2);
         scene.add(hemiLight);
 
-        // 2. Main Rim Light (Moonlight/Streetlight idea) - Cool tint
         const dirLight = new THREE.DirectionalLight(0xaaccff, 0.4);
         dirLight.position.set(-5, 8, -5);
         scene.add(dirLight);
 
-        // 3. Fill Light (Warm) - Subtle
         const fillLight = new THREE.PointLight(0xffaa88, 0.5, 10);
         fillLight.position.set(5, 2, 5);
         scene.add(fillLight);
@@ -302,7 +322,6 @@
 
         const wallMat = new THREE.MeshStandardMaterial(concreteParams);
 
-        // Floor slighly darker/wetter look
         const floorMat = new THREE.MeshStandardMaterial({
             ...concreteParams,
             color: 0x666666,
@@ -337,7 +356,7 @@
         const DECAL_RADIUS = 3.6;
         const CONE_LENGTH = 20.0;
 
-        // CSG Brushes
+        // CSG Brushes for TARGET (the walls)
         const wallCSGMat = new THREE.MeshBasicMaterial({ visible: false });
         const wallThick = 0.05;
 
@@ -364,10 +383,12 @@
         coneBrush.geometry.translate(0, -CONE_LENGTH / 2, 0);
         scene.add(coneBrush);
 
-        // Flashlight Material with Soft Edge Shader
+        // --- VIDEO REVEAL MATERIAL ---
+        // Use BasicMaterial filtering logic for the video
+        // But inject alpha mask for the cone edges
         const resultMaterial = new THREE.MeshBasicMaterial({
-            map: diffuseMap, // Match texture
-            color: 0xfffcd0, // Halogen warm white
+            map: videoTexture,   // Map the video!
+            color: 0xffffff,     // Full brightness
             transparent: true,
             opacity: 1.0,
             side: THREE.DoubleSide
@@ -401,11 +422,13 @@
                 uniform float uConeMaxRadius;
                 uniform float uConeHeight;
                 varying vec3 vWorldPosition;
+                
                 ${shader.fragmentShader}
             `.replace(
                 '#include <dithering_fragment>',
                 `#include <dithering_fragment>
                 
+                // --- CSG Soft Edge Logic ---
                 vec3 toFrag = vWorldPosition - uConeOrigin;
                 float axisProj = dot(toFrag, uConeDir);
                 float safeProj = max(0.0, axisProj);
@@ -414,27 +437,23 @@
                 vec3 closestPoint = uConeOrigin + uConeDir * axisProj;
                 float dist = length(vWorldPosition - closestPoint);
                 
-                // Soft Edge
+                // Soft Edge Falloff
                 float softness = 0.25; 
                 float edgeStart = currentRadius * (1.0 - softness);
                 float alpha = 1.0 - smoothstep(edgeStart, currentRadius, dist);
                 
                 gl_FragColor.a *= alpha;
                 
-                // Hotspot Gradient
-                float centerGlow = 1.0 + (1.0 - dist/currentRadius) * 0.8;
-                gl_FragColor.rgb *= centerGlow;
-                
-                // Add tiny noise grain to light to avoid banding
-                float noise = (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898,78.233))) * 43758.5453) - 0.5) * 0.1;
-                gl_FragColor.rgb += noise;
+                // Slight boost to make video pop against contrast
+                gl_FragColor.rgb *= 1.1; 
                 `
             );
         };
 
         const resultMesh = new THREE.Mesh(new THREE.BufferGeometry(), resultMaterial);
+        // Prioritize over wall to prevent z-fighting
         resultMaterial.polygonOffset = true;
-        resultMaterial.polygonOffsetFactor = -4; // prioritize over wall
+        resultMaterial.polygonOffsetFactor = -4;
         scene.add(resultMesh);
 
         // --- WebSocket & Update ---
